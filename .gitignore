@@ -1,0 +1,29 @@
+# Python virtual environment
+venv/
+monitoring/venv/
+
+# Compiled binaries
+controller/controller
+actuators/controller
+actuators/cooling_actuator
+communication/udp_sender
+communication/udp_receiver
+monitoring/monitor
+monitoring/realtime_monitor
+conveyor_actuator/conveyor_actuator
+sensor_receiver
+
+# Runtime/generated files
+*.csv
+sensor_pipe
+actuator_pipe
+pressure_pipe
+conveyor_pipe
+
+# Temporary files
+*.o
+__pycache__/
+
+pressure_controller/pressure_controller
+pressure_sensor/pressure_sensor
+sensors/temperature_sensor
