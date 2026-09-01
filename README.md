@@ -235,7 +235,40 @@ realtime_monitor.csv
 
 ## 9. Performance Measurement
 
-The system measures controller timing behavior using the difference between the expected periodic execution time and the actual execution time.
+
+The system measures controller timing behavior and UDP communication latency during periodic operation.
+
+The final normal-operation run consisted of **100 control cycles** with **zero detected faults**.
+
+### Final Normal-Operation Results
+
+| Metric               |     Result |
+| -------------------- | ---------: |
+| Completed cycles     |        100 |
+| Faults detected      |          0 |
+| Temperature minimum  |     60.0°C |
+| Temperature maximum  |     80.0°C |
+| Average temperature  |     70.1°C |
+| Cooling ON           |  50 cycles |
+| Cooling OFF          |  50 cycles |
+| Minimum timing error | 159.067 µs |
+| Maximum timing error | 971.521 µs |
+| Average timing error | 516.271 µs |
+| Minimum UDP latency  |  88.397 µs |
+| Maximum UDP latency  | 509.751 µs |
+| Average UDP latency  | 209.751 µs |
+
+The controller successfully completed all 100 temperature-control cycles without detected faults. The cooling actuator was activated for 50 cycles and remained OFF for 50 cycles, consistent with the generated temperature values and the 70°C control threshold.
+
+The measured UDP communication latency remained below 1 ms throughout the final normal-operation run, with an average latency of approximately 209.751 µs.
+
+The raw monitoring data for this experiment is stored in:
+
+```text
+results/final_normal_run/realtime_monitor.csv
+```
+
+The corresponding performance graphs are stored in the same results directory.
 
 The final normal-operation run consisted of:
 
