@@ -21,7 +21,7 @@
 typedef struct {
     char name[32];
     char task[32];
-    double load;
+    double cpu;
     long long last_seen_ms;
     int healthy;
 } Node;
@@ -109,9 +109,9 @@ static void print_status(Node nodes[], Task tasks[])
             age = now - nodes[i].last_seen_ms;
 
         printf(
-            "NODE=%s LOAD=%.2f HEALTH=%s TASK=%s LAST_SEEN=%lld ms AGO\n",
+            "NODE=%s CPU=%.2f HEALTH=%s TASK=%s LAST_SEEN=%lld ms AGO\n",
             nodes[i].name,
-            nodes[i].load,
+            nodes[i].cpu,
             nodes[i].healthy ? "HEALTHY" : "FAILED",
             nodes[i].task,
             age
@@ -511,18 +511,18 @@ int main(void)
             char node_name[32];
             int cycle;
             long long sender_time;
-            double load;
+            double cpu;
             char health[32];
 
 
             int parsed =
                 sscanf(
                     buffer,
-                    "NODE=%31s CYCLE=%d TIME_MS=%lld LOAD=%lf HEALTH=%31s",
+                    "NODE=%31s CYCLE=%d TIME_MS=%lld CPU=%lf HEALTH=%31s",
                     node_name,
                     &cycle,
                     &sender_time,
-                    &load,
+                    &cpu,
                     health
                 );
 
@@ -544,8 +544,7 @@ int main(void)
                     nodes[node_index].last_seen_ms =
                         timestamp_ms();
 
-                    nodes[node_index].load =
-                        load;
+                    nodes[node_index].cpu = cpu;
 
                     /*
                      * Node recovered if it was
@@ -564,10 +563,10 @@ int main(void)
 
 
                     printf(
-                        "HEARTBEAT_RECEIVED NODE=%s CYCLE=%d LOAD=%.2f\n",
+                        "HEARTBEAT_RECEIVED NODE=%s CYCLE=%d CPU=%.2f\n",
                         node_name,
                         cycle,
-                        load
+                        cpu
                     );
 
                     fflush(stdout);

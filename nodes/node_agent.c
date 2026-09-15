@@ -11,32 +11,13 @@
 #define COORDINATOR_IP "127.0.0.1"
 #define COORDINATOR_PORT 9001
 
-static double get_load(void)
-{
-    FILE *fp;
-    char buffer[256];
+typedef struct {
+    unsigned long long total;
+    unsigned long long idle;
+} CpuStats;
 
-    fp = fopen("/proc/loadavg", "r");
 
-    if (fp == NULL) {
-        return -1.0;
-    }
-
-    if (fgets(buffer, sizeof(buffer), fp) == NULL) {
-        fclose(fp);
-        return -1.0;
-    }
-
-    fclose(fp);
-
-    double load;
-
-    if (sscanf(buffer, "%lf", &load) != 1) {
-        return -1.0;
-    }
-
-    return load;
-}
+/* ---------- TIME ---------- */
 
 static long long timestamp_ms(void)
 {
@@ -48,13 +29,104 @@ static long long timestamp_ms(void)
            ts.tv_nsec / 1000000LL;
 }
 
+
+/* ---------- CPU STATISTICS ---------- */
+
+static int read_cpu_stats(CpuStats *stats)
+{
+    FILE *fp = fopen("/proc/stat", "r");
+
+    if (fp == NULL)
+        return -1;
+
+    char line[512];
+
+    if (fgets(line, sizeof(line), fp) == NULL) {
+        fclose(fp);
+        return -1;
+    }
+
+    fclose(fp);
+
+    unsigned long long user;
+    unsigned long long nice;
+    unsigned long long system;
+    unsigned long long idle;
+    unsigned long long iowait;
+    unsigned long long irq;
+    unsigned long long softirq;
+    unsigned long long steal;
+
+    int fields = sscanf(
+        line,
+        "cpu %llu %llu %llu %llu %llu %llu %llu %llu",
+        &user,
+        &nice,
+        &system,
+        &idle,
+        &iowait,
+        &irq,
+        &softirq,
+        &steal
+    );
+
+    if (fields < 4)
+        return -1;
+
+    stats->total =
+        user +
+        nice +
+        system +
+        idle +
+        iowait +
+        irq +
+        softirq +
+        steal;
+
+    stats->idle = idle + iowait;
+
+    return 0;
+}
+
+
+/* ---------- CPU UTILIZATION ---------- */
+
+static double get_cpu_utilization(
+    CpuStats *previous,
+    CpuStats *current)
+{
+    unsigned long long total_delta =
+        current->total - previous->total;
+
+    unsigned long long idle_delta =
+        current->idle - previous->idle;
+
+    if (total_delta == 0)
+        return 0.0;
+
+    double utilization =
+        100.0 *
+        (double)(total_delta - idle_delta) /
+        (double)total_delta;
+
+    if (utilization < 0.0)
+        utilization = 0.0;
+
+    if (utilization > 100.0)
+        utilization = 100.0;
+
+    return utilization;
+}
+
+
+/* ---------- MAIN ---------- */
+
 int main(int argc, char *argv[])
 {
     const char *node_name = "NODE_A";
 
-    if (argc > 1) {
+    if (argc > 1)
         node_name = argv[1];
-    }
 
     int sockfd = socket(
         AF_INET,
@@ -90,20 +162,54 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    CpuStats previous;
+    CpuStats current;
+
+    if (read_cpu_stats(&previous) != 0) {
+        fprintf(
+            stderr,
+            "Failed to read initial CPU statistics.\n"
+        );
+
+        close(sockfd);
+        return 1;
+    }
+
     printf("========================================\n");
     printf(" Distributed Factory Node Agent\n");
     printf(" Node: %s\n", node_name);
     printf(" Coordinator: %s:%d\n",
            COORDINATOR_IP,
            COORDINATOR_PORT);
+    printf(" Metric: CPU utilization from /proc/stat\n");
     printf("========================================\n");
 
     for (int cycle = 1; ; cycle++) {
 
-        double load = get_load();
+        /*
+         * Wait before taking the second sample.
+         * This gives us a meaningful CPU utilization interval.
+         */
+        sleep(1);
+
+        if (read_cpu_stats(&current) != 0) {
+            fprintf(
+                stderr,
+                "Failed to read CPU statistics.\n"
+            );
+            continue;
+        }
+
+        double cpu =
+            get_cpu_utilization(
+                &previous,
+                &current
+            );
+
+        previous = current;
 
         const char *health =
-            (load >= 0.0 && load < 4.0)
+            (cpu >= 0.0 && cpu < 80.0)
             ? "HEALTHY"
             : "OVERLOADED";
 
@@ -112,11 +218,11 @@ int main(int argc, char *argv[])
         snprintf(
             message,
             sizeof(message),
-            "NODE=%s CYCLE=%d TIME_MS=%lld LOAD=%.2f HEALTH=%s",
+            "NODE=%s CYCLE=%d TIME_MS=%lld CPU=%.2f HEALTH=%s",
             node_name,
             cycle,
             timestamp_ms(),
-            load,
+            cpu,
             health
         );
 
@@ -139,11 +245,7 @@ int main(int argc, char *argv[])
         }
 
         fflush(stdout);
-
-        sleep(1);
     }
-
-    printf("Node agent finished.\n");
 
     close(sockfd);
 
