@@ -27,3 +27,17 @@ __pycache__/
 pressure_controller/pressure_controller
 pressure_sensor/pressure_sensor
 sensors/temperature_sensor
+
+# Compiled C binaries
+controller/controller
+sensors/temperature_sensor
+actuators/cooling_actuator
+pressure_sensor/pressure_sensor
+pressure_controller/pressure_controller
+conveyor_actuator/conveyor_actuator
+communication/udp_sender
+communication/udp_receiver
+monitoring/realtime_monitor
+monitoring/monitor
+coordinator/coordinator
+nodes/node_agent
