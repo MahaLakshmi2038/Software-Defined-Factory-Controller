@@ -4,14 +4,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 #include <time.h>
 
-static double get_cpu_load(void)
+#define COORDINATOR_IP "127.0.0.1"
+#define COORDINATOR_PORT 9001
+
+static double get_load(void)
 {
     FILE *fp;
     char buffer[256];
 
     fp = fopen("/proc/loadavg", "r");
+
     if (fp == NULL) {
         return -1.0;
     }
@@ -23,12 +29,13 @@ static double get_cpu_load(void)
 
     fclose(fp);
 
-    double load1;
-    if (sscanf(buffer, "%lf", &load1) != 1) {
+    double load;
+
+    if (sscanf(buffer, "%lf", &load) != 1) {
         return -1.0;
     }
 
-    return load1;
+    return load;
 }
 
 static long long timestamp_ms(void)
@@ -49,28 +56,87 @@ int main(int argc, char *argv[])
         node_name = argv[1];
     }
 
+    int sockfd = socket(
+        AF_INET,
+        SOCK_DGRAM,
+        0
+    );
+
+    if (sockfd < 0) {
+        perror("socket");
+        return 1;
+    }
+
+    struct sockaddr_in coordinator;
+
+    memset(
+        &coordinator,
+        0,
+        sizeof(coordinator)
+    );
+
+    coordinator.sin_family = AF_INET;
+    coordinator.sin_port =
+        htons(COORDINATOR_PORT);
+
+    if (inet_pton(
+            AF_INET,
+            COORDINATOR_IP,
+            &coordinator.sin_addr
+        ) <= 0) {
+
+        perror("inet_pton");
+        close(sockfd);
+        return 1;
+    }
+
     printf("========================================\n");
     printf(" Distributed Factory Node Agent\n");
     printf(" Node: %s\n", node_name);
+    printf(" Coordinator: %s:%d\n",
+           COORDINATOR_IP,
+           COORDINATOR_PORT);
     printf("========================================\n");
 
-    for (int cycle = 1; cycle <= 30; cycle++) {
+    for (int cycle = 1; ; cycle++) {
 
-        double cpu_load = get_cpu_load();
+        double load = get_load();
 
         const char *health =
-            (cpu_load >= 0.0 && cpu_load < 4.0)
+            (load >= 0.0 && load < 4.0)
             ? "HEALTHY"
             : "OVERLOADED";
 
-        printf(
-            "NODE=%s CYCLE=%d TIME_MS=%lld LOAD=%.2f HEALTH=%s\n",
+        char message[256];
+
+        snprintf(
+            message,
+            sizeof(message),
+            "NODE=%s CYCLE=%d TIME_MS=%lld LOAD=%.2f HEALTH=%s",
             node_name,
             cycle,
             timestamp_ms(),
-            cpu_load,
+            load,
             health
         );
+
+        ssize_t sent = sendto(
+            sockfd,
+            message,
+            strlen(message),
+            0,
+            (struct sockaddr *)&coordinator,
+            sizeof(coordinator)
+        );
+
+        if (sent < 0) {
+            perror("sendto");
+        } else {
+            printf(
+                "HEARTBEAT_SENT: %s\n",
+                message
+            );
+        }
 
         fflush(stdout);
 
@@ -78,6 +144,8 @@ int main(int argc, char *argv[])
     }
 
     printf("Node agent finished.\n");
+
+    close(sockfd);
 
     return 0;
 }
