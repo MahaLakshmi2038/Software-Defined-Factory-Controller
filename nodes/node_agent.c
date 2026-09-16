@@ -126,6 +126,7 @@ int main(int argc, char *argv[])
 {
     const char *node_name = "NODE_A";
     int overload_mode = 0;
+    int dynamic_workload_mode = 0;
     int delay_ms = 0;
 
     if (argc > 1)
@@ -139,12 +140,19 @@ int main(int argc, char *argv[])
      *
      * --delay-ms N
      *     Artificial heartbeat communication delay.
+     *
+     * --dynamic-workload
+     *     Changes the simulated workload during runtime.
      */
     for (int i = 2; i < argc; i++) {
 
         if (strcmp(argv[i], "--overload") == 0) {
 
             overload_mode = 1;
+
+        } else if (strcmp(argv[i], "--dynamic-workload") == 0) {
+
+            dynamic_workload_mode = 1;
 
         } else if (strcmp(argv[i], "--delay-ms") == 0) {
 
@@ -278,6 +286,21 @@ int main(int argc, char *argv[])
              * as overloaded without affecting other nodes.
              */
             cpu = 100.0;
+
+        } else if (dynamic_workload_mode) {
+
+            /*
+             * Dynamic workload experiment:
+             *
+             * Cycles 1-5  : normal workload
+             * Cycles 6-10 : high workload (85%)
+             * Cycles 11+  : normal workload again
+             */
+            if (cycle >= 6 && cycle <= 10) {
+                cpu = 85.0;
+            } else {
+                cpu = 5.0;
+            }
 
         } else {
 
