@@ -10,6 +10,7 @@
 
 #define COORDINATOR_IP "127.0.0.1"
 #define COORDINATOR_PORT 9001
+#define CPU_OVERLOAD_THRESHOLD 80.0
 
 typedef struct {
     unsigned long long total;
@@ -124,9 +125,68 @@ static double get_cpu_utilization(
 int main(int argc, char *argv[])
 {
     const char *node_name = "NODE_A";
+    int overload_mode = 0;
+    int delay_ms = 0;
 
     if (argc > 1)
         node_name = argv[1];
+
+    /*
+     * Optional arguments:
+     *
+     * --overload
+     *     Controlled CPU overload injection.
+     *
+     * --delay-ms N
+     *     Artificial heartbeat communication delay.
+     */
+    for (int i = 2; i < argc; i++) {
+
+        if (strcmp(argv[i], "--overload") == 0) {
+
+            overload_mode = 1;
+
+        } else if (strcmp(argv[i], "--delay-ms") == 0) {
+
+            if (i + 1 >= argc) {
+
+                fprintf(
+                    stderr,
+                    "Error: --delay-ms requires a value in milliseconds.\n"
+                );
+
+                return 1;
+            }
+
+            delay_ms = atoi(argv[++i]);
+
+            if (delay_ms < 0) {
+
+                fprintf(
+                    stderr,
+                    "Error: delay must be >= 0 ms.\n"
+                );
+
+                return 1;
+            }
+
+        } else {
+
+            fprintf(
+                stderr,
+                "Unknown argument: %s\n",
+                argv[i]
+            );
+
+            fprintf(
+                stderr,
+                "Usage: %s NODE_NAME [--overload] [--delay-ms N]\n",
+                argv[0]
+            );
+
+            return 1;
+        }
+    }
 
     int sockfd = socket(
         AF_INET,
@@ -166,6 +226,7 @@ int main(int argc, char *argv[])
     CpuStats current;
 
     if (read_cpu_stats(&previous) != 0) {
+
         fprintf(
             stderr,
             "Failed to read initial CPU statistics.\n"
@@ -181,7 +242,21 @@ int main(int argc, char *argv[])
     printf(" Coordinator: %s:%d\n",
            COORDINATOR_IP,
            COORDINATOR_PORT);
-    printf(" Metric: CPU utilization from /proc/stat\n");
+
+    if (overload_mode) {
+        printf(" Mode: CONTROLLED OVERLOAD INJECTION\n");
+        printf(" Simulated CPU: 100.00%%\n");
+    } else {
+        printf(" Mode: NORMAL\n");
+        printf(" Metric: CPU utilization from /proc/stat\n");
+    }
+
+    if (delay_ms > 0) {
+        printf(" Heartbeat delay: %d ms\n", delay_ms);
+    } else {
+        printf(" Heartbeat delay: 0 ms\n");
+    }
+
     printf("========================================\n");
 
     for (int cycle = 1; ; cycle++) {
@@ -192,26 +267,55 @@ int main(int argc, char *argv[])
          */
         sleep(1);
 
-        if (read_cpu_stats(&current) != 0) {
-            fprintf(
-                stderr,
-                "Failed to read CPU statistics.\n"
-            );
-            continue;
+        double cpu;
+
+        if (overload_mode) {
+
+            /*
+             * Controlled fault injection.
+             *
+             * This deliberately reports this logical node
+             * as overloaded without affecting other nodes.
+             */
+            cpu = 100.0;
+
+        } else {
+
+            if (read_cpu_stats(&current) != 0) {
+
+                fprintf(
+                    stderr,
+                    "Failed to read CPU statistics.\n"
+                );
+
+                continue;
+            }
+
+            cpu =
+                get_cpu_utilization(
+                    &previous,
+                    &current
+                );
+
+            previous = current;
         }
 
-        double cpu =
-            get_cpu_utilization(
-                &previous,
-                &current
-            );
-
-        previous = current;
-
         const char *health =
-            (cpu >= 0.0 && cpu < 80.0)
+            (cpu < CPU_OVERLOAD_THRESHOLD)
             ? "HEALTHY"
             : "OVERLOADED";
+
+        /*
+         * Capture the sender timestamp BEFORE the
+         * artificial delay. The coordinator then measures
+         * the elapsed time between this timestamp and
+         * heartbeat reception.
+         */
+        long long sender_time = timestamp_ms();
+
+        if (delay_ms > 0) {
+            usleep((useconds_t)delay_ms * 1000U);
+        }
 
         char message[256];
 
@@ -221,7 +325,7 @@ int main(int argc, char *argv[])
             "NODE=%s CYCLE=%d TIME_MS=%lld CPU=%.2f HEALTH=%s",
             node_name,
             cycle,
-            timestamp_ms(),
+            sender_time,
             cpu,
             health
         );
@@ -236,8 +340,11 @@ int main(int argc, char *argv[])
         );
 
         if (sent < 0) {
+
             perror("sendto");
+
         } else {
+
             printf(
                 "HEARTBEAT_SENT: %s\n",
                 message

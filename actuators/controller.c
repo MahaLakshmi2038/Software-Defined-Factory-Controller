@@ -43,6 +43,8 @@ int main() {
     struct timespec start;
     struct timespec end;
     struct timespec current_time;
+    struct timespec fault_start;
+    struct timespec fault_end;
 
     clock_gettime(CLOCK_MONOTONIC, &next_time);
 
@@ -50,7 +52,8 @@ int main() {
     printf(" Self-Periodic Real-Time Controller\n");
     printf("=====================================\n");
     printf("Control cycle: 100 ms\n");
-    printf("Temperature limit: %.1f C\n\n", TEMP_LIMIT);
+    printf("Temperature limit: %.1f C\n", TEMP_LIMIT);
+    printf("Sensor fault response: FAIL-SAFE COOLING ON\n\n");
 
     for (int cycle = 1; cycle <= TOTAL_CYCLES; cycle++) {
 
@@ -73,6 +76,35 @@ int main() {
 
         /* Read sensor value */
         if (fscanf(sensor_pipe, "%lf", &temperature) != 1) {
+
+            /*
+             * Sensor fault detected.
+             *
+             * The controller cannot trust the sensor value,
+             * so it enters a fail-safe state by forcing
+             * the cooling actuator ON.
+             */
+            clock_gettime(CLOCK_MONOTONIC, &fault_start);
+
+            printf("\n*** SENSOR FAULT DETECTED ***\n");
+            printf("Cycle: %03d\n", cycle);
+            printf("Sensor data unavailable or invalid.\n");
+            printf("FAIL-SAFE ACTION: COOLING ON\n");
+
+            fprintf(actuator_pipe, "1\n");
+            fflush(actuator_pipe);
+
+            clock_gettime(CLOCK_MONOTONIC, &fault_end);
+
+            long long fault_response_time =
+                time_diff_ns(fault_start, fault_end);
+
+            printf("FAULT_RESPONSE_TIME_NS=%lld\n",
+                   fault_response_time);
+
+            printf("FAIL_SAFE_STATUS=SUCCESS\n");
+            printf("COOLING_COMMAND=ON\n");
+
             break;
         }
 
@@ -106,7 +138,8 @@ int main() {
     fclose(sensor_pipe);
     fclose(actuator_pipe);
 
-    printf("\nController finished successfully.\n");
+    printf("\nController finished safely.\n");
 
     return 0;
 }
+
